@@ -3,6 +3,7 @@
 from collections import OrderedDict, defaultdict
 import operator
 import numbers
+from LogicAPI.constants import BaseClass
 
 NoneType = type(None)
 kb = OrderedDict()
@@ -29,6 +30,8 @@ def fromPythonArg(arg):
 
 
 class Term(object):
+    base_class = BaseClass.Term
+
     def __init__(self, *args):
         self.functor = self.__class__
         self.args = [fromPythonArg(arg) for arg in args]
@@ -60,7 +63,7 @@ class Term(object):
         return Terms(self) & other
 
     def unifyWith(self, other, env):
-        if isinstance(other, Var) or isinstance(other, Func):
+        if isinstance(other, IntVar) or isinstance(other, Func):
             return other.unifyWith(self, env)
         if isinstance(other, Term):
             match_functor = self.functor == other.functor
@@ -120,7 +123,7 @@ class Term(object):
             for i in range(len(term.args)):
                 if isinstance(term.args[i], Term):
                     args.append(self.unique(names, term.args[i]))
-                elif isinstance(term.args[i], Var):
+                elif isinstance(term.args[i], IntVar):
                     if Key(term.args[i]) in names:
                         args.append(names[Key(term.args[i])])
                     else:
@@ -141,6 +144,7 @@ def joinEnv(env1, env2):
 
 class Const(Term):
     args = []
+    base_class = BaseClass.Const
 
     def __init__(self, val):
         self.functor = val
@@ -149,7 +153,7 @@ class Const(Term):
         return repr(self.functor)
 
     def unifyWith(self, other, env):
-        if isinstance(other, Var) or isinstance(other, Func):
+        if isinstance(other, IntVar) or isinstance(other, Func):
             return other.unifyWith(self, env)
         if isinstance(other, Const):
             return self.functor == other.functor
@@ -240,18 +244,20 @@ class Terms(list):
             prev = state
 
 
-class Var(object):
-    rank = 0
+var_id = 0
 
-    def __init__(self, name):
-        if not isinstance(name, str):
-            raise Exception(repr(name) + ' is not a string!')
-        if name.startswith('_G'):
-            raise Exception('The name of variable cannot start with \'_G\'')
-        self.name = name
+
+class IntVar(object):
+    rank = 0
+    base_class = BaseClass.Var
+
+    def __init__(self):
+        global var_id
+        self.id = var_id
+        var_id += 1
 
     def __repr__(self):
-        return self.name
+        return '_G' + str(self.id)
 
     def __eq__(self, another):
         return Eq(self, another)
@@ -317,7 +323,7 @@ class Var(object):
         other = other.applyEnv(env)
         if self is other:
             return True
-        if isinstance(other, Var):
+        if isinstance(other, IntVar):
             if self.rank < other.rank:
                 env[Key(self)] = other
             elif self.rank > other.rank:
@@ -336,6 +342,18 @@ class Var(object):
         return self
 
 
+class Var(IntVar):
+    def __init__(self, name):
+        if not isinstance(name, str):
+            raise Exception(repr(name) + ' is not a string!')
+        if name.startswith('_G'):
+            raise Exception('The name of variable cannot start with \'_G\'')
+        self.name = name
+
+    def __repr__(self):
+        return self.name
+
+
 class AnonVar(object):
     __metaclass__ = Singleton
 
@@ -351,6 +369,8 @@ _ = AnonVar()
 
 
 class Func(Term):
+    base_class = BaseClass.Func
+
     def function(self, *args):
         raise Exception('function in ' + self + ' is not defined')
 
@@ -417,7 +437,7 @@ class Func(Term):
 
     def eval(self):
         for i in range(len(self.args)):
-            if isinstance(self.args[i], Var):
+            if isinstance(self.args[i], IntVar):
                 raise Exception(
                     'There are variables in the function: ' + str(self))
             elif isinstance(self.args[i], Func):
@@ -512,19 +532,6 @@ class Key(object):
         return repr(self.var)
 
 
-var_id = 0
-
-
-class IntVar(Var):
-    def __init__(self):
-        global var_id
-        self.id = var_id
-        var_id += 1
-
-    def __repr__(self):
-        return '_G' + str(self.id)
-
-
 class Result(object):
     def __init__(self, data):
         self.data = data
@@ -557,7 +564,7 @@ class State(object):
 
 
 def variables_list(term, env):
-    if isinstance(term, Var) and not term.name.startswith('_'):
+    if isinstance(term, IntVar) and not term.name.startswith('_'):
         env.append(term)
     elif isinstance(term, Terms):
         for t in term:
@@ -583,7 +590,7 @@ def query(x):
                 res[Key(var)] = var.applyEnv(env)
         rev = defaultdict(list)
         for key in res:
-            if isinstance(res[key], Var):
+            if isinstance(res[key], IntVar):
                 rev[Key(res[key])].append(key.var)
         for l in rev.values():
             for i in range(1, len(l)):
