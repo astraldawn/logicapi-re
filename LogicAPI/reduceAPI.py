@@ -12,10 +12,10 @@ kb = OrderedDict()
 def fromPythonArg(arg):
     if isinstance(arg, AnonVar):
         return IntVar()
-    elif isinstance(arg, Var):
+    elif is_class(arg, BaseClass.Var):
         arg.rank = 0
         return arg
-    elif isinstance(arg, Term) or isinstance(arg, Const):
+    elif is_term(arg):
         return arg
     else:
         for t in supportedConstTypes:
@@ -32,7 +32,7 @@ class Term(object):
         self.args = [fromPythonArg(arg) for arg in args]
 
     def __le__(self, other):
-        if isinstance(other, Term):
+        if is_term(other):
             other = Terms(other)
         key = (self.functor, len(self.args))
         if key in kb:
@@ -58,9 +58,9 @@ class Term(object):
         return Terms(self) & other
 
     def unifyWith(self, other, env):
-        if isinstance(other, IntVar) or isinstance(other, Func):
+        if is_class(other, BaseClass.Var) or is_class(other, BaseClass.Func):
             return other.unifyWith(self, env)
-        if isinstance(other, Term):
+        if is_term(other):
             match_functor = self.functor == other.functor
             match_length = len(self.args) == len(other.args)
             if match_functor and match_length:
@@ -105,9 +105,9 @@ class Term(object):
         return Eq(self, other)
 
     def unique(self, names, term):
-        if isinstance(term, Const):
+        if is_class(term, BaseClass.Const):
             return term
-        if isinstance(term, Terms):
+        if is_class(term, BaseClass.Terms):
             res = Terms()
             res.inverted = term.inverted
             res.cut = term.cut
@@ -116,9 +116,9 @@ class Term(object):
         else:
             args = []
             for i in range(len(term.args)):
-                if isinstance(term.args[i], Term):
+                if is_term(term.args[i]):
                     args.append(self.unique(names, term.args[i]))
-                elif isinstance(term.args[i], IntVar):
+                elif is_class(term.args[i], BaseClass.Var):
                     if Key(term.args[i]) in names:
                         args.append(names[Key(term.args[i])])
                     else:
@@ -130,6 +130,8 @@ class Term(object):
             res.args = args
             return res
 
+class Cut(Term):
+    __metaclass__ = Singleton
 
 class Const(Term):
     args = []
@@ -142,9 +144,9 @@ class Const(Term):
         return repr(self.functor)
 
     def unifyWith(self, other, env):
-        if isinstance(other, IntVar) or isinstance(other, Func):
+        if is_class(other, BaseClass.Var) or is_class(other, BaseClass.Func):
             return other.unifyWith(self, env)
-        if isinstance(other, Const):
+        if is_class(other, BaseClass.Const):
             return self.functor == other.functor
         return False
 
@@ -152,17 +154,8 @@ class Const(Term):
         return self
 
 
-class Singleton(type):
-    _instance = None
-
-    def __call__(cls):
-        if cls._instance is None:
-            cls._instance = type.__call__(cls)
-        return cls._instance
-
-
-class Cut(Term):
-    __metaclass__ = Singleton
+class Object(Const):
+    __metaclass__ = ObjectType
 
 
 class Terms(list):
@@ -179,11 +172,11 @@ class Terms(list):
     def __and__(self, other):
         if self.inverted:
             self = Terms(self)
-        if isinstance(other, Terms):
+        if is_class(other, BaseClass.Terms):
             if other.inverted:
                 other = Terms(other)
             self += other
-        elif isinstance(other, Term):
+        elif is_term(other):
             self.append(other)
         else:
             raise Exception(repr(other) + ' is not a legal term')
@@ -196,7 +189,7 @@ class Terms(list):
         return self
 
     def __repr__(self):
-        res = ' & '.join([repr(term) if isinstance(term, Term)
+        res = ' & '.join([repr(term) if is_term(term)
                           else '(' + repr(term) + ')' for term in self])
         if self.inverted:
             return '~(' + res + ')'
@@ -308,13 +301,13 @@ class IntVar(object):
         return GT(self, other)
 
     def unifyWith(self, other, env):
-        if isinstance(other, Func):
+        if is_class(other, BaseClass.Func):
             return other.unifyWith(self, env)
         self = self.applyEnv(env)
         other = other.applyEnv(env)
         if self is other:
             return True
-        if isinstance(other, IntVar):
+        if is_class(other, BaseClass.Var):
             if self.rank < other.rank:
                 env[Key(self)] = other
             elif self.rank > other.rank:
@@ -366,6 +359,7 @@ class Func(Term):
         raise Exception('function in ' + self + ' is not defined')
 
     def __init__(self, *args):
+        print(args, self.function)
         self.functor = self.function
         self.args = [fromPythonArg(arg) for arg in args]
 
@@ -509,12 +503,3 @@ class NE(Term):
         if not self.args[0].unifyWith(self.args[1], {}):
             yield {}
 
-
-class ObjectType(type):
-    def __init__(self, *args, **kwargs):
-        type.__init__(self, *args, **kwargs)
-        self.functor = self
-
-
-class Object(Const):
-    __metaclass__ = ObjectType

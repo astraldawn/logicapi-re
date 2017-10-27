@@ -20,17 +20,18 @@ class Result(object):
 
 
 def variables_list(term, env):
-    if is_of_class(term, BaseClass.Var) and not term.name.startswith('_'):
+    if is_class(term, BaseClass.Var) and not term.name.startswith('_'):
         env.append(term)
-    elif is_of_class(term, BaseClass.Terms):
+    elif is_class(term, BaseClass.Terms):
         for t in term:
             variables_list(t, env)
-    elif is_of_class(term, BaseClass.Term):
+    elif is_class(term, BaseClass.Term):
         for t in term.args:
             variables_list(t, env)
 
 
 def query(x):
+    print(type(x))
     for env in x.query():
         l = []
         variables_list(x, l)
@@ -40,7 +41,7 @@ def query(x):
                 res[Key(var)] = var.applyEnv(env)
         rev = defaultdict(list)
         for key in res:
-            if is_of_class(res[key], BaseClass.Var):
+            if is_class(res[key], BaseClass.Var):
                 rev[Key(res[key])].append(key.var)
         for l in rev.values():
             for i in range(1, len(l)):
@@ -50,6 +51,6 @@ def query(x):
 
 
 def toPythonArg(arg):
-    if is_of_class(arg, BaseClass.Const):
+    if is_class(arg, BaseClass.Const):
         arg = arg.functor
     return arg

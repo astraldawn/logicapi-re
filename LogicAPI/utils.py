@@ -8,13 +8,16 @@ supportedConstTypes.add(numbers.Number)
 supportedConstTypes.add(str)
 supportedConstTypes.add(bool)
 
-def is_of_class(item, base_class):
-    return item.base_class == base_class
+def is_class(item, base_class):
+    try:
+        return item.base_class == base_class
+    except:
+        return False
 
-def is_term_base(item):
-    return (is_of_class(item, BaseClass.Term)
-        or is_of_class(item, BaseClass.Func)
-        or is_of_class(item, BaseClass.Const))
+def is_term(item):
+    return (is_class(item, BaseClass.Term)
+        or is_class(item, BaseClass.Func)
+        or is_class(item, BaseClass.Const))
 
 
 def joinEnv(env1, env2):
@@ -26,9 +29,9 @@ def joinEnv(env1, env2):
 class State(object):
     def __init__(self, term, env, prev):
         self.env = env
-        if (is_term_base(term)):
+        if (is_term(term)):
             self.gen = term.applyEnv(env).query()
-        elif is_of_class(term, BaseClass.Terms):
+        elif is_class(term, BaseClass.Terms):
             self.gen = term.query(env)
         self.prev = prev
 
@@ -51,3 +54,18 @@ class Key(object):
 
     def __repr__(self):
         return repr(self.var)
+
+
+class Singleton(type):
+    _instance = None
+
+    def __call__(cls):
+        if cls._instance is None:
+            cls._instance = type.__call__(cls)
+        return cls._instance
+
+
+class ObjectType(type):
+    def __init__(self, *args, **kwargs):
+        type.__init__(self, *args, **kwargs)
+        self.functor = self

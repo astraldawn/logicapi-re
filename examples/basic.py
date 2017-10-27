@@ -30,6 +30,7 @@ X = Var('X')
 f(X) <= g(X) & h(X)  # define rules
 print('query f(X):\n\t', list(query(f(X))))  # lists all solutions to the query
 print('query f(X) & Cut():\n\t', list(query(f(X) & Cut())))
+print('query f(X):\n\t', list(query(f(X) & (X <= 1))))
 
 A = Var('A')
 B = Var('B')
