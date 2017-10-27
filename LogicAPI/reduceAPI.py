@@ -1,18 +1,13 @@
 # LogicAPI without any list functionality
 
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 import operator
-import numbers
+
 from LogicAPI.constants import BaseClass
+from LogicAPI.utils import *
 
-NoneType = type(None)
+
 kb = OrderedDict()
-supportedConstTypes = set()
-supportedConstTypes.add(NoneType)
-supportedConstTypes.add(numbers.Number)
-supportedConstTypes.add(str)
-supportedConstTypes.add(bool)
-
 
 def fromPythonArg(arg):
     if isinstance(arg, AnonVar):
@@ -136,12 +131,6 @@ class Term(object):
             return res
 
 
-def joinEnv(env1, env2):
-    env1 = env1.copy()
-    env1.update(env2)
-    return env1
-
-
 class Const(Term):
     args = []
     base_class = BaseClass.Const
@@ -177,6 +166,8 @@ class Cut(Term):
 
 
 class Terms(list):
+    base_class = BaseClass.Terms
+
     def __init__(self, term=None):
         if term:
             list.__init__(self, [term])
@@ -437,13 +428,14 @@ class Func(Term):
 
     def eval(self):
         for i in range(len(self.args)):
-            if isinstance(self.args[i], IntVar):
+            cur_arg = self.args[i]
+            if cur_arg.base_class == BaseClass.Var:
                 raise Exception(
                     'There are variables in the function: ' + str(self))
-            elif isinstance(self.args[i], Func):
-                self.args[i] = self.args[i].eval()
-            elif isinstance(self.args[i], Const):
-                self.args[i] = self.args[i].functor
+            elif cur_arg.base_class == BaseClass.Func:
+                self.args[i] = cur_arg.eval()
+            elif cur_arg.base_class == BaseClass.Const:
+                self.args[i] = cur_arg.functor
         return self.functor(*self.args)
 
     def unifyWith(self, other, env):
@@ -516,87 +508,6 @@ class NE(Term):
     def query(self):
         if not self.args[0].unifyWith(self.args[1], {}):
             yield {}
-
-
-class Key(object):
-    def __init__(self, var):
-        self.var = var
-
-    def __hash__(self):
-        return hash(self.var)
-
-    def __eq__(self, other):
-        return isinstance(other, Key) and self.var is other.var
-
-    def __repr__(self):
-        return repr(self.var)
-
-
-class Result(object):
-    def __init__(self, data):
-        self.data = data
-
-    def __repr__(self):
-        output = [repr(k) + ' = ' + repr(v) for k, v in self.data.items()]
-        return '{' + ', '.join(output) + '}'
-
-    def __getitem__(self, var):
-        return toPythonArg(self.data[Key(var)])
-
-    def __contains__(self, var):
-        return Key(var) in self.data
-
-
-class State(object):
-    def __init__(self, term, env, prev):
-        self.env = env
-        if isinstance(term, Term):
-            self.gen = term.applyEnv(env).query()
-        elif isinstance(term, Terms):
-            self.gen = term.query(env)
-        self.prev = prev
-
-    def generate(self):
-        try:
-            return joinEnv(self.env, next(self.gen))
-        except StopIteration:
-            return None
-
-
-def variables_list(term, env):
-    if isinstance(term, IntVar) and not term.name.startswith('_'):
-        env.append(term)
-    elif isinstance(term, Terms):
-        for t in term:
-            variables_list(t, env)
-    elif isinstance(term, Term):
-        for t in term.args:
-            variables_list(t, env)
-
-
-def toPythonArg(arg):
-    if isinstance(arg, Const):
-        arg = arg.functor
-    return arg
-
-
-def query(x):
-    for env in x.query():
-        l = []
-        variables_list(x, l)
-        res = OrderedDict()
-        for var in l:
-            if Key(var) not in res:
-                res[Key(var)] = var.applyEnv(env)
-        rev = defaultdict(list)
-        for key in res:
-            if isinstance(res[key], IntVar):
-                rev[Key(res[key])].append(key.var)
-        for l in rev.values():
-            for i in range(1, len(l)):
-                res[Key(l[i - 1])] = l[i]
-            del res[Key(l[len(l) - 1])]
-        yield Result(res)
 
 
 class ObjectType(type):
