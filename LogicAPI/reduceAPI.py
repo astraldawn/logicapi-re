@@ -1,3 +1,5 @@
+# LogicAPI without any list functionality
+
 from collections import OrderedDict, defaultdict
 import operator
 import numbers
@@ -12,17 +14,12 @@ supportedConstTypes.add(bool)
 
 
 def fromPythonArg(arg):
-    if isinstance(arg, list):
-        if arg == []:
-            return EmptyList()
-        else:
-            return List(arg)
-    elif isinstance(arg, AnonVar):
+    if isinstance(arg, AnonVar):
         return IntVar()
     elif isinstance(arg, Var):
         arg.rank = 0
         return arg
-    elif isinstance(arg, Term) or isinstance(arg, List) or isinstance(arg, Const):
+    elif isinstance(arg, Term) or isinstance(arg, Const):
         return arg
     else:
         for t in supportedConstTypes:
@@ -53,7 +50,8 @@ class Term(object):
             kb[key] = [(self, Terms())]
 
     def __repr__(self):
-        return self.functor.__name__ + '(' + ','.join([repr(arg) for arg in self.args]) + ')'
+        return self.functor.__name__ + \
+            '(' + ','.join([repr(arg) for arg in self.args]) + ')'
 
     def __invert__(self):
         return ~Terms(self)
@@ -64,13 +62,16 @@ class Term(object):
     def unifyWith(self, other, env):
         if isinstance(other, Var) or isinstance(other, Func):
             return other.unifyWith(self, env)
-        if isinstance(other, Term) and self.functor == other.functor and len(self.args) == len(other.args):
-            for i in range(len(self.args)):
-                arg1 = self.args[i].applyEnv(env)
-                arg2 = other.args[i].applyEnv(env)
-                if not arg1.unifyWith(arg2, env):
-                    return False
-            return True
+        if isinstance(other, Term):
+            match_functor = self.functor == other.functor
+            match_length = len(self.args) == len(other.args)
+            if match_functor and match_length:
+                for i in range(len(self.args)):
+                    arg1 = self.args[i].applyEnv(env)
+                    arg2 = other.args[i].applyEnv(env)
+                    if not arg1.unifyWith(arg2, env):
+                        return False
+                return True
         return False
 
     def applyEnv(self, env):
@@ -119,8 +120,6 @@ class Term(object):
             for i in range(len(term.args)):
                 if isinstance(term.args[i], Term):
                     args.append(self.unique(names, term.args[i]))
-                elif isinstance(term.args[i], List):
-                    args.append(self.unique_list(names, term.args[i]))
                 elif isinstance(term.args[i], Var):
                     if Key(term.args[i]) in names:
                         args.append(names[Key(term.args[i])])
@@ -132,50 +131,6 @@ class Term(object):
             res.functor = term.functor
             res.args = args
             return res
-
-    def unique_list(self, names, l):
-        first = Node(l.first.val)
-        if isinstance(first.val, Term):
-            first.val = self.unique(names, first.val)
-        elif isinstance(first.val, List):
-            first.val = self.unique_list(names, first.val)
-        elif isinstance(first.val, Var):
-            if Key(first.val) in names:
-                first.val = names[Key(first.val)]
-            else:
-                intVar = IntVar()
-                names[Key(first.val)] = intVar
-                first.val = intVar
-        temp = first
-        p = l.first.next
-        while p:
-            if isinstance(p.val, Term):
-                temp = temp.add(self.unique(names, p.val))
-            elif isinstance(p.val, List):
-                temp = temp.add(self.unique_list(names, p.val))
-            elif isinstance(p.val, Var):
-                if Key(p.val) in names:
-                    temp = temp.add(names[Key(p.val)])
-                else:
-                    intVar = IntVar()
-                    names[Key(p.val)] = intVar
-                    temp = temp.add(intVar)
-            if p is l.last:
-                break
-            p = p.next
-        rest = l.rest
-        l = l.__class__.__new__(l.__class__)
-        l.first = first
-        l.last = temp
-        l.rest = rest
-        if l.rest:
-            if Key(l.rest) in names:
-                l.rest = names[Key(l.rest)]
-            else:
-                intVar = IntVar()
-                names[Key(l.rest)] = intVar
-                l.rest = intVar
-        return l
 
 
 def joinEnv(env1, env2):
@@ -308,8 +263,6 @@ class Var(object):
         return Add(self, other)
 
     def __radd__(self, other):
-        if isinstance(other, list):
-            return List(other, self)
         return Add(other, self)
 
     def __sub__(self, other):
@@ -467,12 +420,6 @@ class Func(Term):
             if isinstance(self.args[i], Var):
                 raise Exception(
                     'There are variables in the function: ' + str(self))
-            elif isinstance(self.args[i], EmptyList):
-                if self.functor != operator.add:
-                    self.args[i] = []
-            elif isinstance(self.args[i], List):
-                if self.functor != operator.add:
-                    self.args[i] = self.args[i].toPythonList()
             elif isinstance(self.args[i], Func):
                 self.args[i] = self.args[i].eval()
             elif isinstance(self.args[i], Const):
@@ -565,150 +512,6 @@ class Key(object):
         return repr(self.var)
 
 
-class EmptyList(Const):
-    __metaclass__ = Singleton
-
-    def __init__(self):
-        self.functor = EmptyList
-
-    def __hash__(self):
-        return object.__hash__(self)
-
-    def __add__(self, other):
-        if isinstance(other, List):
-            return other
-        else:
-            raise Exception('[] and ' + repr(other) +
-                            ' cannot be concatenated.')
-
-    def __repr__(self):
-        return '[]'
-
-    def toPythonList(self):
-        return []
-
-    def __nonzero__(self):
-        return False
-
-
-class Node(object):
-    def __init__(self, val, prev=None, next=None):
-        self.val = val
-        self.prev = prev
-        self.next = next
-
-    def add(self, val):
-        self.next = Node(val, self)
-        return self.next
-
-
-class List(object):
-    def __init__(self, l, rest=EmptyList()):
-        self.first = Node(fromPythonArg(l[0]))
-        temp = self.first
-        for i in range(1, len(l)):
-            temp = temp.add(fromPythonArg(l[i]))
-        self.last = temp
-        self.rest = rest
-
-    def __repr__(self):
-        res = '[' + repr(self.first.val)
-        if self.first is not self.last:
-            temp = self.first.next
-            while temp:
-                res += ',' + repr(temp.val)
-                if temp is self.last:
-                    break
-                temp = temp.next
-        res += ']'
-        if self.rest:
-            res += '+' + repr(self.rest)
-        return res
-
-    def toPythonList(self):
-        if self.rest:
-            raise Exception(repr(self.rest) + ' in ' +
-                            repr(self) + ' is unknown.')
-        acc = []
-        temp = self.first
-        while temp:
-            acc.append(toPythonArg(temp.val))
-            if temp is self.last:
-                break
-            temp = temp.next
-        return acc
-
-    def __add__(self, other):
-        if isinstance(other, EmptyList):
-            return self
-        if not isinstance(other, List):
-            raise Exception(repr(self) + ' and ' +
-                            repr(other) + ' cannot be concatenated.')
-        if self.rest:
-            raise Exception(repr(self.rest) + ' in ' +
-                            repr(self) + ' is unknown.')
-        self.last.next = other.first
-        other.first.prev = self.last
-        res = self.__class__.__new__(self.__class__)
-        res.first = self.first
-        res.last = other.last
-        res.rest = other.rest
-        return res
-
-    def unifyWith(self, other, env):
-        if isinstance(other, Var) or isinstance(other, Func):
-            return other.unifyWith(self, env)
-        if isinstance(other, List):
-            temp1 = self.first
-            temp2 = other.first
-            while temp1 and temp2:
-                if not temp1.val.unifyWith(temp2.val, env):
-                    return False
-                if temp1 is self.last:
-                    temp1 = None
-                if temp2 is other.last:
-                    temp2 = None
-                if temp1:
-                    temp1 = temp1.next
-                if temp2:
-                    temp2 = temp2.next
-            if temp1:
-                new_self = self.__class__.__new__(self.__class__)
-                new_self.first = temp1
-                new_self.last = self.last
-                new_self.rest = self.rest
-                return other.rest and other.rest.unifyWith(new_self, env)
-            if temp2:
-                new_other = other.__class__.__new__(other.__class__)
-                new_other.first = temp2
-                new_other.last = other.last
-                new_other.rest = other.rest
-                return self.rest and self.rest.unifyWith(new_other, env)
-            return self.rest.unifyWith(other.rest, env)
-        return False
-
-    def applyEnv(self, env):
-        first = Node(self.first.val.applyEnv(env))
-        temp = first
-        if self.first is not self.last:
-            p = self.first.next
-            while p:
-                temp = temp.add(p.val.applyEnv(env))
-                if p is self.last:
-                    break
-                p = p.next
-        res = self.__class__.__new__(self.__class__)
-        res.first = first
-        res.last = temp
-        res.rest = self.rest.applyEnv(env)
-        if isinstance(res.rest, List):
-            res.last.next = res.rest.first
-            res.rest.first.prev = res.last
-            res.last = res.rest.last
-            res.rest = res.rest.rest
-        return res
-
-
 var_id = 0
 
 
@@ -727,7 +530,8 @@ class Result(object):
         self.data = data
 
     def __repr__(self):
-        return '{' + ', '.join([repr(k) + ' = ' + repr(v) for k, v in self.data.items()]) + '}'
+        output = [repr(k) + ' = ' + repr(v) for k, v in self.data.items()]
+        return '{' + ', '.join(output) + '}'
 
     def __getitem__(self, var):
         return toPythonArg(self.data[Key(var)])
@@ -761,22 +565,10 @@ def variables_list(term, env):
     elif isinstance(term, Term):
         for t in term.args:
             variables_list(t, env)
-    elif isinstance(term, List):
-        temp = term.first
-        while temp:
-            variables_list(temp.val, env)
-            if temp is term.last:
-                break
-            temp = temp.next
-        variables_list(term.rest, env)
 
 
 def toPythonArg(arg):
-    if isinstance(arg, EmptyList):
-        arg = []
-    elif isinstance(arg, List):
-        arg = arg.toPythonList()
-    elif isinstance(arg, Const):
+    if isinstance(arg, Const):
         arg = arg.functor
     return arg
 
